@@ -6,37 +6,101 @@ const dishes = require(path.resolve("src/data/dishes-data"));
 // Use this function to assign ID's when necessary
 const nextId = require("../utils/nextId");
 
-// TODO: Implement the /dishes handlers needed to make the tests pass
-// Use these functions to check for required request data
-const bodyDataHas = require("../utils/bodyDataHas");
-const dataIsInt = require("../utils/dataIsInt");
-const intIsPositive = require("../utils/intIsPositive");
-
-// Middleware function to validate existence of a dish
+// Middleware functions
 function dishExists(req, res, next) {
   const { dishId } = req.params;
-  const { data: { id } = {} } = req.body;
   const foundDish = dishes.find(dish => dish.id === dishId);
-  const idMatchesDishId = id ? id === dishId : true;
 
   if(foundDish) {
-    if(idMatchesDishId) {
-      res.locals.dish = foundDish;
-      return next();
-    } else {
-      next({
-        status: 400,
-        message: `Dish id does not match route id. Dish: ${id}, Route: ${dishId}`,
-      });
-    }
-  } else {
-    next({
-      status: 404,
-      message: `Dish does not exist: ${dishId}.`,
-    });
+    res.locals.dish = foundDish;
+    return next();
   }
+  next({
+    status: 404,
+    message: `Dish does not exist: ${dishId}.`,
+  });
 }
 
+function idMatchesDishId(req, res, next) {
+  const { dishId } = req.params;
+  const { data: { id } = {} } = req.body;
+  const idMatchesDishId = id ? id === dishId : true;
+  if(idMatchesDishId) {
+    return next();
+  }
+  next({
+    status: 400,
+    message: `Dish id does not match route id. Dish: ${id}, Route: ${dishId}`,
+  });
+}
+
+function bodyDataHasName(req, res, next) {
+  const { data: { name } = {} } = req.body;
+  if (name) {
+    return next();
+  }
+  next({
+    status: 400,
+    message: `Dish must include a name`
+  });
+}
+
+function bodyDataHasDescription(req, res, next) {
+  const { data: { description } = {} } = req.body;
+  if (description) {
+    return next();
+  }
+  next({
+    status: 400,
+    message: `Dish must include a description`
+  });
+}
+
+function bodyDataHasPrice(req, res, next) {
+  const { data: { price } = {} } = req.body;
+  if (price) {
+    return next();
+  }
+  next({
+    status: 400,
+    message: `Dish must include a price`
+  });
+}
+
+function bodyDataHasImgUrl(req, res, next) {
+  const { data: { image_url } = {} } = req.body;
+  if (image_url) {
+    return next();
+  }
+  next({
+    status: 400,
+    message: `Dish must include a image_url`
+  });
+}
+
+function dishPriceIsInt(req, res, next) {
+  const { data: { price } = {} } = req.body;
+  if(Number.isInteger(price)) {
+    return next();
+  }
+  next({
+    status: 400,
+    message: `Dish must have a price that is an integer greater than 0`
+  });
+}
+
+function dishPriceIsPositive(req, res, next) {
+  const { data: { price } = {} } = req.body;
+  if(price > 0) {
+    return next();
+  }
+  next({
+    status: 400,
+    message: `Dish must have a price that is an integer greater than 0`
+  });
+}
+
+// API functions
 function create(req, res) {
   const { data: { name, description, price, image_url } = {} } = req.body;
   const newDish = {
@@ -73,26 +137,28 @@ function list(req, res) {
 
 module.exports = {
   create: [
-    bodyDataHas("Dish", "name"),
-    bodyDataHas("Dish", "description"),
-    bodyDataHas("Dish", "price"),
-    dataIsInt("Dish", "price"),
-    intIsPositive("Dish", "price"),
-    bodyDataHas("Dish", "image_url"),
+    bodyDataHasName,
+    bodyDataHasDescription,
+    bodyDataHasPrice,
+    dishPriceIsInt,
+    dishPriceIsPositive,
+    bodyDataHasImgUrl,
     create
   ],
   read: [
     dishExists,
+    idMatchesDishId,
     read
   ],
   update: [
-    bodyDataHas("Dish", "name"),
-    bodyDataHas("Dish", "description"),
-    bodyDataHas("Dish", "price"),
-    dataIsInt("Dish", "price"),
-    intIsPositive("Dish", "price"),
-    bodyDataHas("Dish", "image_url"),
     dishExists,
+    idMatchesDishId,
+    bodyDataHasName,
+    bodyDataHasDescription,
+    bodyDataHasPrice,
+    dishPriceIsInt,
+    dishPriceIsPositive,
+    bodyDataHasImgUrl,
     update
   ],
   list

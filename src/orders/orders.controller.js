@@ -3,39 +3,143 @@ const path = require("path");
 // Use the existing order data
 const orders = require(path.resolve("src/data/orders-data"));
 
-// Use this function to assigh ID's when necessary
+// Use this function to assign ID's when necessary
 const nextId = require("../utils/nextId");
 
-// TODO: Implement the /orders handlers needed to make the tests pass
-const bodyDataHas = require("../utils/bodyDataHas");
-const validateOrderDishes = require("../utils/validateOrderDishes");
-const validateOrderDishQuantity = require("../utils/validateOrderDishQuantity");
-const validateOrderStatus = require("../utils/validateOrderStatus");
-const validateOrderNotPending = require("../utils/validateOrderNotPending");
-
+// Middleware functions
 function orderExists(req, res, next) {
   const { orderId } = req.params;
-  const { data: { id } = {} } = req.body;
-  const foundOrder = orders.find(order => order.id === Number(orderId));
-  const idMatchesOrderId = id ? id === orderId : true;
+  const foundOrder = orders.find(order => order.id === orderId);
 
   if(foundOrder) {
-    if(idMatchesOrderId) {
       res.locals.order = foundOrder;
       return next();
-    } else {
-      next({
-        message: `Order id does not match route id. Order: ${id}, Route: ${orderId}.`,
-      });
-    }
-  } else {
-    next({
-      status: 404,
-      message: `Order id not found: ${orderId}`,
-    });
   }
+  next({
+    status: 404,
+    message: `Order id not found: ${orderId}`,
+  });
 }
 
+function idMatchesOrderId(req, res, next) {
+  const { orderId } = req.params;
+  const { data: { id } = {} } = req.body;
+  const idMatchesOrderId = id ? id === orderId : true;
+  if(idMatchesOrderId) {
+    return next();
+  }
+  next({
+    status: 400,
+    message: `Order id does not match route id. Order: ${id}, Route: ${orderId}.`,
+  });
+}
+
+function bodyDataHasDeliverTo(req, res, next) {
+  const { data: { deliverTo } = {} } = req.body;
+  if (deliverTo) {
+    return next();
+  }
+  next({
+    status: 400,
+    message: `Order must include a deliverTo`
+  });
+}
+
+function bodyDataHasMobileNumber(req, res, next) {
+  const { data: { mobileNumber } = {} } = req.body;
+  if (mobileNumber) {
+    return next();
+  }
+  next({
+    status: 400,
+    message: `Order must include a mobileNumber`
+  });
+}
+
+function bodyDataHasDishes(req, res, next) {
+  const { data: { dishes } = {} } = req.body;
+  if (dishes) {
+    return next();
+  }
+  next({
+    status: 400,
+    message: `Order must include a dish`
+  });
+}
+
+function validateOrderDishes(req, res, next) {
+  const { data: { dishes } = {} } = req.body;
+  if (Object.prototype.toString.call(dishes) === '[object Array]') {
+    if(dishes.length > 0) {
+      return next();
+    }
+  }
+  next({
+    status: 400,
+    message: `Order must include at least one dish`
+  });
+}
+
+function validateOrderDishQuantity(req, res, next) {
+  const { data: { dishes } = {} } = req.body;
+  let dishesAreValid = true;
+  let dishIndex = 0;
+
+  for(let i=0; i<dishes.length; i++) {
+    if(dishes[i].quantity) {
+      if(!Number.isInteger(dishes[i].quantity)) {
+        dishIndex = i;
+        dishesAreValid = false;
+        break;
+      } else if(dishes[i].quantity < 1) {
+        dishIndex = i;
+        dishesAreValid = false;
+        break;
+      }
+    } else {
+      dishIndex = i;
+      dishesAreValid = false;
+      break;
+    }
+  }
+
+  if(dishesAreValid) {
+    return next();
+  }
+  next({
+    status: 400,
+    message: `Dish ${dishIndex} must have a quantity that is an integer greater than 0`
+  });
+}
+
+function validateOrderStatus(req, res, next) {
+  const { data: { status } = {} } = req.body;
+
+  if(status && 
+    (status.includes("pending") ||
+    status.includes("preparing") ||
+    status.includes("out-for-delivery") ||
+    status.includes("delivered"))) {
+      return next();
+  }
+  next({
+    status: 400,
+    message: `Order must have a status of pending, preparing, out-for-delivery, delivered`
+  });
+}
+
+function validateOrderStatusNotDelivered(req, res, next) {
+  const { data: { status } = {} } = req.body;
+  if(status !== "delivered") {
+    return next();
+  }
+  next({
+    status: 400,
+    message: `A delivered order cannot be changed`
+  });
+}
+
+// API functions
 function create(req, res) {
   const { data: { deliverTo, mobileNumber, status, dishes } = {} } = req.body;
   const newOrder = {
@@ -66,11 +170,20 @@ function update(req, res) {
   res.json({ data: order });
 }
 
-function destroy(req, res) {
+function destroy(req, res, next) {
   const { orderId } = req.params;
-  const index = orders.findIndex((order) => order.id === Number(orderId));
-  const deletedOrders = orders.splice(index, 1);
-  res.sendStatus(204);
+  const matchingOrder = orders.find((order) => order.id === orderId);
+  const { data: { id, deliverTo, mobileNumber, status, dishes } = {} } = req.body;
+
+  if(matchingOrder.status === "pending") {
+    const index = orders.findIndex((order) => order.id === Number(orderId));
+    const deletedOrders = orders.splice(index, 1);
+    res.sendStatus(204);
+  }
+  return next({
+    status: 400,
+    message: `An order cannot be deleted unless it is pending.`
+  })
 }
 
 function list(req, res) {
@@ -79,24 +192,33 @@ function list(req, res) {
 
 module.exports = {
   create: [
-    bodyDataHas("Order", "deliverTo"),
-    bodyDataHas("Order", "mobileNumber"),
-    bodyDataHas("Order", "dishes"),
-    validateOrderDishes(),
-    validateOrderDishQuantity(),
+    bodyDataHasDeliverTo,
+    bodyDataHasMobileNumber,
+    bodyDataHasDishes,
+    validateOrderDishes,
+    validateOrderDishQuantity,
     create
   ],
   read: [
     orderExists,
+    idMatchesOrderId,
     read
   ],
   update: [
     orderExists,
-    validateOrderStatus(),
+    idMatchesOrderId,
+    bodyDataHasDeliverTo,
+    bodyDataHasMobileNumber,
+    bodyDataHasDishes,
+    validateOrderStatus,
+    validateOrderStatusNotDelivered,
+    validateOrderDishes,
+    validateOrderDishQuantity,
     update
   ],
   delete: [
-    validateOrderNotPending(),
+    orderExists,
+    idMatchesOrderId,
     destroy
   ],
   list
